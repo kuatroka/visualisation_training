@@ -1,0 +1,21 @@
+venv/
+data/
+_vegafusion_data/
+random/.ipynb_checkpoints/
+random/venv/
+altair_tutorial/notebooks/.ipynb_checkpoints/
+holoview_panel_hvplot_tutorial/.ipynb_checkpoints/
+holoview_panel_hvplot_tutorial/.virtual_documents/
+holoview_panel_hvplot_tutorial/data/
+holoview_panel_hvplot_tutorial/assets/
+.vscode
+
+
+# *.txt
+# *.db
+# *.csv
+# *.parquet
+
+
+
+

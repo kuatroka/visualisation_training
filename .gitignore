@@ -1,4 +1,5 @@
 venv/
+venv3.11/
 data/
 _vegafusion_data/
 random/.ipynb_checkpoints/

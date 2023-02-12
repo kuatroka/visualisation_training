@@ -1,0 +1,91 @@
+# To reproduce: install 'anaconda-project', then 'anaconda-project run'
+name: holoviz_tutorial
+description: HoloViz Tutorial
+maintainers:
+- holoviz
+
+user_fields: [maintainers]
+channels:
+  - pyviz/label/dev
+  - conda-forge
+  - nodefaults
+
+packages: &pkgs
+- python=3.9
+- jinja2>=3.0.0
+- packaging
+# Temporary pin to workaround https://github.com/numba/numba/issues/8615
+- numpy <1.24
+- pandas
+- dask
+- xarray
+- notebook
+- matplotlib
+- ipympl
+- bokeh
+- datashader==0.14.1
+- param==1.12.2
+- netcdf4
+- fastparquet
+- jupyterlab
+- fsspec
+- hvplot==0.8.0
+- panel==0.13.1
+- holoviews==1.15.0
+- plotly
+# While testing the project someone got this error: ModuleNotFoundError: No module named 'jupyter_nbextensions_configurator'
+- jupyter_nbextensions_configurator
+
+dependencies: *pkgs
+
+commands:
+  notebooks:
+    notebook: .
+  dashboard:
+    unix: cd tutorial; panel serve 06_Dashboards.ipynb --show
+  test:
+    unix:    pytest --nbsmoke-run -k ".ipynb" --ignore envs
+    windows: pytest --nbsmoke-run -k ".ipynb" --ignore envs
+    env_spec: test
+  lint:
+    unix:    pytest --nbsmoke-lint -k ".ipynb" --ignore envs
+    windows: pytest --nbsmoke-lint -k ".ipynb" --ignore envs
+    env_spec: test
+
+# Optional, used to silence warnings about unused notebooks 
+skip_imports:
+  notebooks: true
+
+env_specs:
+  default: {}
+  test:
+    packages: &testpkgs
+      - nbsmoke
+      - pytest
+    dependencies: *testpkgs
+  doc:
+    packages: &docpkgs
+      - nbsite
+      - pydata-sphinx-theme <0.9.0
+      - docutils ==0.16.0
+    dependencies: *docpkgs
+
+platforms:
+- linux-64
+- osx-64
+- win-64
+- osx-arm64
+
+downloads:
+  DATA_1:
+    url: https://earth-data.s3.amazonaws.com/gpw_v4_population_density_rev11_2010_2pt5_min.zip
+    description: Population Raster
+    filename: data/raster
+  DATA_2:
+    url: https://datashader-data.s3.amazonaws.com/earthquakes-projected.parq
+    description: Earthquakes
+    filename: data/earthquakes-projected.parq
+  DATA_3:
+    url: https://raw.githubusercontent.com/holoviz/holoviz/main/examples/assets/usgs_logo.png
+    description: USGS Logo
+    filename: data/usgs_logo.png

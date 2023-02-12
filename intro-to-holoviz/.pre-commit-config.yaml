@@ -1,0 +1,14 @@
+repos:
+  - repo: https://github.com/nbQA-dev/nbQA
+    rev: 1.6.1
+    hooks:
+      - id: nbqa-black
+      - id: nbqa-isort
+      - id: nbqa-flake8
+        args: 
+          - --extend-ignore=F401,E402
+          - --max-line-length=88
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.6.1
+    hooks:
+      - id: nbstripout

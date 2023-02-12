@@ -1,0 +1,15 @@
+# Copied from https://github.com/jrbourbeau/dask-binder-template/blob/main/.github/workflows/ci-binder.yml
+name: Binder
+on: [push]
+
+jobs:
+  build:
+    if:  github.actor != 'pre-commit-ci[bot]'
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: Build and cache on mybinder.org
+      uses: jupyterhub/repo2docker-action@master
+      with:
+        NO_PUSH: true
+        MYBINDERORG_TAG: ${{ github.event.ref }}

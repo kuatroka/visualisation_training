@@ -1,0 +1,19 @@
+
+name: intro-to-holoviz
+channels:
+  - conda-forge
+dependencies:
+  - bokeh
+  - geoviews
+  - hvplot
+  - intake
+  - ipywidgets
+  - jinja2==3.0.3
+  - jupyterlab>=3
+  - matplotlib
+  - netcdf4
+  - pandas
+  - panel
+  - pooch
+  - python=3.9
+  - xarray

@@ -10,6 +10,11 @@ from pathlib import Path
 ############################################################################
 
 ## Function to end-to-end parse the filings and write to a pandas dataframe
+# no division by 1000
+# cusip transformed to upper case
+
+# !! TODO !! add the removal of records with zeros/nan in shares/value, non-9 cusip, non-xml filings, add column for 'dsource' = sec_app
+# rename column to a common standard with dropbox
 
 def end_to_end_parsing(file_path, directory_parquet):
     def work_content_extract(file_path):
@@ -210,7 +215,7 @@ def end_to_end_parsing(file_path, directory_parquet):
                 except ZeroDivisionError:
                     portfolioDict["sharePriceAtEndOfQtr"] = float(int("0" + ""))
 
-                portfolioDict["securityType"] = row.find("sshPrnamtType").text.strip()
+                portfolioDict["shares_bonds"] = row.find("sshPrnamtType").text.strip()
 
                 if row.find("putCall") is not None:
                     portfolioDict["putCall"] = row.find("putCall").text.strip()
@@ -231,7 +236,7 @@ def end_to_end_parsing(file_path, directory_parquet):
                         "sharesValue": float("0.0" + ""),
                         "sharesHeldAtEndOfQtr": int("0" + ""),
                         "sharePriceAtEndOfQtr": float("0.0" + ""),
-                        "securityType": "",
+                        "shares_bonds": "",
                         "putCall": "",
                         "edgar_path": file_path,
                     }
@@ -248,108 +253,106 @@ def end_to_end_parsing(file_path, directory_parquet):
     ), parse_institutionalInvestorPortfolio(file_path)
 
     data = pd.merge(df1, df2, on="edgar_path")
-
-    data.insert(
-        0,
-        "ID",
-        data.accessionNumber.map(str)
-        + "-"
-        + data.cikManager.map(str)
-        + "-"
-        + data.index.map(str),
-    )
+    data = data.assign(dsource='sec_app')    
+    data = data.rename(columns={'accessionNumber': 'accession_number', "cikManager": 'cik', "managerName":'cik_name','xml_flag':'type'
+                            "periodOfReport": 'rdate', "submissionType": 'submission_type', "filedAsOfDate":'fdate',
+                            "entryTotal": "entry_total", "valueTotal": "value_total",
+                            'putCall':'put_call', "sharesValue": 'value',"sharesHeldAtEndOfQtr":'shares',"securityType": "security_type",
+                            'titleOfClass':'title_of_class', 'nameOfIssuer':'name_of_issuer' , "edgar_path":'file'})
 
     column_names = [
-        "ID",
-        "accessionNumber",
-        "cikManager",
-        "managerName",
-        "periodOfReport",
-        "report_Quarter",
-        "report_Year",
-        "submissionType",
-        "filedAsOfDate",
-        "isAmendment",
-        "amendmentType",
-        "entryTotal",
-        "valueTotal",
+        "accession_number",
+        "cik",
+        "cik_name",
+        "rdate",
+        "submission_type",
+        "fdate",
+        "entry_total",
+        "value_total",
         "cusip",
-        "nameOfIssuer",
-        "titleOfClass",
-        "sharesValue",
-        "sharesHeldAtEndOfQtr",
-        "sharePriceAtEndOfQtr",
-        "securityType",
-        "putCall",
-        "xml_flag",
+        "name_of_issuer",
+        "title_of_class",
+        "value",
+        "shares",
+        "shares_bonds",
+        "put_call",
+        "type",
         "created_at",
-        "edgar_path",
+        "file",
+        'dsource'
     ]
     data = data.astype(
         {
-            "ID": str,
-            "accessionNumber": str,
-            "cikManager": "Int64",
-            "periodOfReport": "datetime64[ns]",
-            "report_Quarter": "Int64",
-            "report_Year": "Int64",
-            "submissionType": str,
-            "isAmendment": bool,
-            "amendmentType": str,
-            "filedAsOfDate": "datetime64[ns]",
-            "entryTotal": "Int64",
-            "valueTotal": "float64",
+            "accession_number": str,
+            "cik": "Int64",
+            'cik_name': str,
+            "rdate": "datetime64[ns]",
+            "submission_type": str,
+            "fdate": "datetime64[ns]",
+            "entry_total": "Int64",
+            "value_total": "float64",
             "cusip": str,
-            "nameOfIssuer": str,
-            "titleOfClass": str,
-            "sharesValue": "float64",
-            "sharesHeldAtEndOfQtr": "Int64",
-            "securityType": str,
-            "putCall": str,
-            "xml_flag": str,
+            "name_of_issuer": str,
+            "title_of_class": str,
+            "value": "float64",
+            "shares": "Int64",
+            "shares_bonds": str,
+            "put_call": str,
+            "type": str,
             "created_at": "datetime64[ns]",
-            "edgar_path": str,
+            "file": str,
+            'dsource': str
         }
     )
     data = data.assign(cusip=data.cusip.str.upper())
     data = data.reindex(columns=column_names)
+    # drop records where there are 'nan' in shares or values
+    data = data.dropna(subset=['shares', 'value'])
+    bad_cusip_values: list = ['XXXXXXXXX', 'AAAAAAAAA', '000000000']
+    # delete shares/value == 0, bad cusips or cusip of lentgh not 9 or type == NO (means not XML)
+    mask_shares_value_cusip =  (data['shares'] == 0) | (data['value'] == 0) | (data['cusip'].isin(bad_cusip_values)) | \
+                              (data['cusip'].str.len() != 9 | data['type'] == 'NO') 
+    data = data.drop(df[mask_shares_value_cusip].index)
     
     attributes = {
-        "ID": "first",
-        "accessionNumber": "first",
-        "cikManager": "first",
-        "managerName": "first",
-        "periodOfReport": "first",
-        "report_Quarter": "first",
-        "report_Year": "first",
-        "submissionType": "first",
-        "filedAsOfDate": "first",
-        "isAmendment": "first",
-        "amendmentType": "first",
-        "entryTotal": "first",
-        "valueTotal": "first",
+        "accession_number": "first",
+        "cik": "first",
+        "cik_name": "first",
+        "rdate": "first",
+        "submission_type": "first",
+        "fdate": "first",
+        "entry_total": "first",
+        "value_total": "first",
         "cusip": "first",
-        "nameOfIssuer": "first",
-        "titleOfClass": "first",
-        "sharesValue": "sum",
-        "sharesHeldAtEndOfQtr": "sum",
-        "securityType": "first",
-        "putCall": "first",
-        "xml_flag": "first",
-        "created_at": "first",
-        "edgar_path": "first",
+        "name_of_issuer": "first",
+        "title_of_class": "first",
+        "value": "sum",
+        "shares": "sum",
+        "shares_bonds": "first",
+        "put_call": "first",
+        "type": "first",
+        "file": "first",
+        'dsource': 'first'
     }
     
-    df2 = data.groupby(["cusip"], as_index=False).agg(attributes)
-    df2.to_parquet(
+    # df2 = data.groupby(["cusip"], as_index=False).agg(attributes)
+    # df2.to_parquet(
+    #     os.path.join(
+    #         directory_parquet,
+    #         f"{df2.head(1).cikManager[0]}-{df2.head(1).accessionNumber[0]}-{df2.head(1).filedAsOfDate[0].strftime('%Y-%m-%d')}.parquet",
+    #     )
+    # )
+    
+
+    data.to_parquet(
         os.path.join(
             directory_parquet,
-            f"{df2.head(1).cikManager[0]}-{df2.head(1).accessionNumber[0]}-{df2.head(1).filedAsOfDate[0].strftime('%Y-%m-%d')}.parquet",
+            f"{data.head(1).cikManager[0]}-{data.head(1).accessionNumber[0]}-{data.head(1).filedAsOfDate[0].strftime('%Y-%m-%d')}.parquet",
         )
     )
     
 
-    return df2
+    return data
            
             
             

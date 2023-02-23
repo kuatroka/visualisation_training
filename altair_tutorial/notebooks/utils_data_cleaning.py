@@ -254,11 +254,10 @@ def end_to_end_parsing(file_path, directory_parquet):
 
     data = pd.merge(df1, df2, on="edgar_path")
     data = data.assign(dsource='sec_app')    
-    data = data.rename(columns={'accessionNumber': 'accession_number', "cikManager": 'cik', "managerName":'cik_name','xml_flag':'type'
-                            "periodOfReport": 'rdate', "submissionType": 'submission_type', "filedAsOfDate":'fdate',
-                            "entryTotal": "entry_total", "valueTotal": "value_total",
-                            'putCall':'put_call', "sharesValue": 'value',"sharesHeldAtEndOfQtr":'shares',"securityType": "security_type",
-                            'titleOfClass':'title_of_class', 'nameOfIssuer':'name_of_issuer' , "edgar_path":'file'})
+    data = data.rename(columns={'accessionNumber': 'accession_number', "cikManager": 'cik', "managerName":'cik_name','xml_flag':'type',
+           "periodOfReport": 'rdate', "submissionType": 'submission_type', "filedAsOfDate":'fdate', "entryTotal": "entry_total",
+           "valueTotal": "value_total", 'putCall':'put_call', "sharesValue":'value', "sharesHeldAtEndOfQtr":'shares',
+           "securityType": "security_type", 'titleOfClass':'title_of_class', 'nameOfIssuer':'name_of_issuer' , "edgar_path":'file'})
 
     column_names = [
         "accession_number",
@@ -311,8 +310,8 @@ def end_to_end_parsing(file_path, directory_parquet):
     bad_cusip_values: list = ['XXXXXXXXX', 'AAAAAAAAA', '000000000']
     # delete shares/value == 0, bad cusips or cusip of lentgh not 9 or type == NO (means not XML)
     mask_shares_value_cusip =  (data['shares'] == 0) | (data['value'] == 0) | (data['cusip'].isin(bad_cusip_values)) | \
-                              (data['cusip'].str.len() != 9 | data['type'] == 'NO') 
-    data = data.drop(df[mask_shares_value_cusip].index)
+                              (data['cusip'].str.len() != 9) | (data['type'] == 'NO') 
+    data = data.drop(data[mask_shares_value_cusip].index)
     
     attributes = {
         "accession_number": "first",
@@ -334,25 +333,28 @@ def end_to_end_parsing(file_path, directory_parquet):
         "file": "first",
         'dsource': 'first'
     }
-    
-    # df2 = data.groupby(["cusip"], as_index=False).agg(attributes)
-    # df2.to_parquet(
-    #     os.path.join(
-    #         directory_parquet,
-    #         f"{df2.head(1).cikManager[0]}-{df2.head(1).accessionNumber[0]}-{df2.head(1).filedAsOfDate[0].strftime('%Y-%m-%d')}.parquet",
-    #     )
-    # )
-    
-
-    data.to_parquet(
-        os.path.join(
-            directory_parquet,
-            f"{data.head(1).cikManager[0]}-{data.head(1).accessionNumber[0]}-{data.head(1).filedAsOfDate[0].strftime('%Y-%m-%d')}.parquet",
+    # skip dataframes emptied after all the removals.
+    if not data.empty:
+        # group cusips
+        df2 = data.groupby(["cusip"], as_index=False).agg(attributes)
+        df2.to_parquet(
+            os.path.join(
+                directory_parquet,
+                f"{df2.head(1).cik[0]}-{df2.head(1).accession_number[0]}-{df2.head(1).fdate[0].strftime('%Y-%m-%d')}.parquet",
+            )
         )
-    )
-    
 
-    return data
+
+        # data.to_parquet(
+        #     os.path.join(
+        #         directory_parquet,
+        #         f"{data.head(1).cikManager[0]}-{data.head(1).accessionNumber[0]}-{data.head(1).filedAsOfDate[0].strftime('%Y-%m-%d')}.parquet",
+        #     )
+        # )
+
+
+        return df2
+    else: pd.DataFrame()
            
             
             

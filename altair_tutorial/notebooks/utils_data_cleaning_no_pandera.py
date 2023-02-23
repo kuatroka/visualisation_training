@@ -5,7 +5,6 @@ import pandas as pd
 import numpy as np
 import os
 from pathlib import Path
-import pandera as pa
 
 ############################################################################
 ############################################################################
@@ -17,7 +16,7 @@ import pandera as pa
 # !! TODO !! add the removal of records with zeros/nan in shares/value, non-9 cusip, non-xml filings, add column for 'dsource' = sec_app
 # rename column to a common standard with dropbox
 
-def end_to_end_parsing(file_path, directory_parquet, failures_parq_dir):
+def end_to_end_parsing(file_path, directory_parquet):
     def work_content_extract(file_path):
         """extracting 1. xml or not flag, 2. xml part of filings, SEC header part"""
         open_file = open(file_path, "r")
@@ -295,7 +294,7 @@ def end_to_end_parsing(file_path, directory_parquet, failures_parq_dir):
             "name_of_issuer": str,
             "title_of_class": str,
             "value": "float64",
-            "shares": "float64",
+            "shares": "Int64",
             "shares_bonds": str,
             "put_call": str,
             "type": str,
@@ -304,6 +303,16 @@ def end_to_end_parsing(file_path, directory_parquet, failures_parq_dir):
             'dsource': str
         }
     )
+    data = data.assign(cusip=data.cusip.str.upper())
+    data = data.reindex(columns=column_names)
+    # drop records where there are 'nan' in shares or values
+    data = data.dropna(subset=['shares', 'value'])
+    bad_cusip_values: list = ['XXXXXXXXX', 'AAAAAAAAA', 'ZZZZZZZZZ', '000000000']
+    # delete shares/value == 0, bad cusips or cusip of lentgh not 9 or type == NO (means not XML)
+    mask_shares_value_cusip =  (data['shares'] == 0) | (data['value'] == 0) | (data['cusip'].isin(bad_cusip_values)) | \
+                              (data['cusip'].str.len() != 9) | (data['type'] == 'NO') 
+    data = data.drop(data[mask_shares_value_cusip].index)
+    
     attributes = {
         "accession_number": "first",
         "cik": "first",
@@ -324,57 +333,30 @@ def end_to_end_parsing(file_path, directory_parquet, failures_parq_dir):
         "file": "first",
         'dsource': 'first'
     }
-    data = data.assign(cusip=data.cusip.str.upper())
-    data = data.reindex(columns=column_names)
-   
-    ## pandera code
-    validation_schema = pa.DataFrameSchema({
-    "cusip": pa.Column(str,
-                       pa.Check(lambda s: s.str.len() == 9),
-                       required=True, nullable=False),
-    "value":  pa.Column(float, required=True, nullable=False),
-    "shares": pa.Column(float, required=True, nullable=False)
-        })
-    if data.head(1).type.squeeze() != 'NO':
-        try:
-            validation_schema.validate(data, lazy=True)
-            if not data.empty:
-                # group cusips
-                df2 = data.groupby(["cusip"], as_index=False).agg(attributes)
-                df2.to_parquet(
-                    os.path.join(
-                        directory_parquet,
-                        f"{df2.head(1).cik[0]}-{df2.head(1).accession_number[0]}-{df2.head(1).fdate[0].strftime('%Y-%m-%d')}.parquet",
-                                    )
-                                )
+    # skip dataframes emptied after all the removals.
+    if not data.empty:
+        # group cusips
+        df2 = data.groupby(["cusip"], as_index=False).agg(attributes)
+        df2.to_parquet(
+            os.path.join(
+                directory_parquet,
+                f"{df2.head(1).cik[0]}-{df2.head(1).accession_number[0]}-{df2.head(1).fdate[0].strftime('%Y-%m-%d')}.parquet",
+            )
+        )
 
-                # return df2
-            else: pd.DataFrame()
 
-        except pa.errors.SchemaErrors as e:
-            failure_cases = e.failure_cases
-            failure_cases = (failure_cases.assign(df_file=data.file,
-                                                 df_cik=data.cik,
-                                                 df_rdate=data.rdate,
-                                                 df_fdate=data.fdate,
-                                                 df_value=data.value))
-            # print(failure_cases)
-            failure_cases.to_parquet(Path.joinpath(failures_parq_dir, \
-                                                   f"bad-{data.head(1).cik[0]}-{data.head(1).accession_number[0]}-   {data.head(1).fdate[0].strftime('%Y-%m-%d')}.parquet"))
-            data = data[~data.index.isin(failure_cases["index"])]
-            if not data.empty:
-                # group cusips
-                df2 = data.groupby(["cusip"], as_index=False).agg(attributes)
-                df2.to_parquet(
-                    os.path.join(
-                        directory_parquet,
-                        f"{df2.head(1).cik[0]}-{df2.head(1).accession_number[0]}-{df2.head(1).fdate[0].strftime('%Y-%m-%d')}.parquet",
-                                    )
-                                )
+        # data.to_parquet(
+        #     os.path.join(
+        #         directory_parquet,
+        #         f"{data.head(1).cikManager[0]}-{data.head(1).accessionNumber[0]}-{data.head(1).filedAsOfDate[0].strftime('%Y-%m-%d')}.parquet",
+        #     )
+        # )
 
-                # return df2
-            else: pd.DataFrame()
+
+        return df2
+    else: pd.DataFrame()
+           
             
             
 if __name__ == "__main__":
-    end_to_end_parsing(file, directory_parq, failure_dir)
+    end_to_end_parsing(file, directory_parq)

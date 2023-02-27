@@ -18,6 +18,13 @@ import pandera as pa
 # rename column to a common standard with dropbox
 
 def end_to_end_parsing(file_path, directory_parquet, failures_parq_dir):
+    """
+    func that takes a txt filing's path and parses it to a parquet file
+    in the `directory_parquet`. It uses `pandera` lazy mode to filter out
+    bad cusip or empty/nan/zero shares or values. Bad records are written
+    to the `failures_parq_dir` for a later analysis or correction.
+    
+    """
     def work_content_extract(file_path):
         """extracting 1. xml or not flag, 2. xml part of filings, SEC header part"""
         open_file = open(file_path, "r")
@@ -332,8 +339,8 @@ def end_to_end_parsing(file_path, directory_parquet, failures_parq_dir):
     "cusip": pa.Column(str,
                        pa.Check(lambda s: s.str.len() == 9),
                        required=True, nullable=False),
-    "value":  pa.Column(float, required=True, nullable=False),
-    "shares": pa.Column(float, required=True, nullable=False)
+    "value":  pa.Column(float, pa.Check(lambda s: s != 0.0), required=True, nullable=False),
+    "shares": pa.Column(float, pa.Check(lambda s: s != 0.0), required=True, nullable=False)
         })
     if data.head(1).type.squeeze() != 'NO':
         try:
@@ -357,7 +364,7 @@ def end_to_end_parsing(file_path, directory_parquet, failures_parq_dir):
                                                  df_cik=data.cik,
                                                  df_rdate=data.rdate,
                                                  df_fdate=data.fdate,
-                                                 df_value=data.value))
+                                                 df_value=data.value)).astype({'failure_case':str})
             # print(failure_cases)
             failure_cases.to_parquet(Path.joinpath(failures_parq_dir, \
                                                    f"bad-{data.head(1).cik[0]}-{data.head(1).accession_number[0]}-   {data.head(1).fdate[0].strftime('%Y-%m-%d')}.parquet"))

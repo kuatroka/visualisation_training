@@ -10,12 +10,18 @@ import pandera as pa
 ############################################################################
 ############################################################################
 
-## Function to end-to-end parse the filings and write to a pandas dataframe
-# no division by 1000
-# cusip transformed to upper case
+## Function to end-to-end parse the raw `txt` filings, write to a pandas dataframe
+## and save to a `parquet` file. Only `xml` based filings are dealt with. 
+## The filings prior `xml` format are ignored and instead we use the `csv` filings from dropbox
 
-# !! TODO !! add the removal of records with zeros/nan in shares/value, non-9 cusip, non-xml filings, add column for 'dsource' = sec_app
-# rename column to a common standard with dropbox
+## no division by 1000
+## cusip transformed to upper case
+## uses `pandera` to remove `cusip` != length of 9 (as non compliant)
+## uses `pandera` to remove `values` or `shares` != 0 (as non compliant)
+## the code writes bad data into a separate dataframes per filings
+## transformation where we group multiple `cusip` into one only after we have removed 
+## the ones with zeros in `value` or `shares` 
+
 
 def end_to_end_parsing(file_path, directory_parquet, failures_parq_dir):
     """

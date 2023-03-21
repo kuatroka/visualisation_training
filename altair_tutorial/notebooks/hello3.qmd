@@ -1,0 +1,374 @@
+---
+title: "Intro to Quarto and Charting"
+format:
+  html:
+    toc: true
+    code-fold: true
+jupyter: python3
+---
+
+
+
+
+For a demonstration of a line plot on a polar axis, see @fig-polar.
+
+```{python}
+# | label: fig-polar
+# | fig-cap: "**A line plot on a polar axis**"
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+r = np.arange(0, 2, 0.01)
+theta = 4 * np.pi * r
+fig, ax = plt.subplots(subplot_kw={"projection": "polar"})
+ax.plot(theta, r)
+ax.set_rticks([0.5, 1, 1.5, 2])
+ax.grid(True)
+plt.show()
+```
+
+## *Babbiti Rabbiti*
+```{python}
+print("babbiti rabbiti")
+```
+
+
+
+## Stocks: dropdowns
+```{python}
+import altair as alt
+from vega_datasets import data
+
+source = data.stocks()
+source.symbol.value_counts()
+source["category"] = "software"
+source.loc[source["symbol"].isin(["AAPL", "IBM"]), "category"] = "hardware"
+
+cat_values = list(source["category"].unique())
+sym_values = list(source["symbol"].unique())
+
+cat_options = [None] + cat_values
+sym_options = [None] + sym_values
+
+cat_labels = ["All"] + cat_values
+sym_labels = ["All"] + sym_values
+
+dropdown_category = alt.binding_select(options=cat_options, labels=cat_labels, name=" ")
+dropdown_symbol = alt.binding_select(options=sym_options, labels=sym_labels, name=" ")
+
+selection_category = alt.selection_single(
+    fields=["category"], bind=dropdown_category, name="cat"
+)
+selection_symbol = alt.selection_single(
+    fields=["symbol"], bind=dropdown_symbol, name="sym"
+)
+
+op_condition = {
+    "condition": {
+        "test": {"and": [{"selection": "cat"}, {"selection": "sym"}]},
+        "value": 1,
+    },
+    "value": 0.1,
+}
+
+chart = (
+    alt.Chart(source)
+    .mark_line()
+    .encode(x="date", y="price", color="symbol", opacity=op_condition)
+    .add_selection(selection_symbol, selection_category)
+)
+
+chart
+```
+
+## Cars: Interactive tooltip
+```{python}
+import altair as alt
+from vega_datasets import data
+import panel as pn
+
+cars = data.cars()
+chart = (
+    alt.Chart(cars)
+    .mark_point(size=30)
+    .encode(
+        x="Horsepower",
+        y="Miles_per_Gallon",
+        color="Origin",
+        tooltip=["Name", "Origin", "Horsepower", "Miles_per_Gallon"],
+    )
+    .interactive()
+)
+altair_pane = pn.panel(chart)
+altair_pane
+
+altair_pane.object = chart.mark_circle(size=100)
+altair_pane
+
+```
+
+## Penguins: Brush Selection and Dropdown
+```{python}
+import pandas as pd
+
+penguins_url = (
+    "https://raw.githubusercontent.com/vega/vega/master/docs/data/penguins.json"
+)
+df = pd.read_json(penguins_url)
+
+brush = alt.selection_interval(name="brush")  # selection of type "interval"
+input_dropdown = alt.binding_select(
+    options=df.Species.unique().tolist(), name="Species "
+)
+species_selection = alt.selection_single(
+    fields=["Species"], bind=input_dropdown, name="species_selection"
+)
+
+chart = (
+    alt.Chart(penguins_url)
+    .mark_point()
+    .encode(
+        x=alt.X("Beak Length (mm):Q", scale=alt.Scale(zero=False)),
+        y=alt.Y("Beak Depth (mm):Q", scale=alt.Scale(zero=False)),
+        color=alt.condition(brush, "Species:N", alt.value("lightgray")),
+    )
+    .properties(width=250, height=250)
+    .add_selection(brush, species_selection)
+    .transform_filter(species_selection)
+)
+chart
+
+```
+
+## Altair, panel: Linked Brush & Text Search
+```{python}
+import pandas as pd
+import altair as alt
+import panel as pn
+
+pn.extension()
+# standardizing state and county column names
+apple_counties = pd.read_csv("./data/apple_clean_counties.csv", parse_dates=["date"])
+google_counties = pd.read_csv("./data/google_clean_counties.csv", parse_dates=["date"])
+
+apple_counties["state"] = apple_counties["sub_region"]
+apple_counties["county"] = apple_counties["region"]
+
+google_counties["state"] = google_counties["sub_region_1"]
+google_counties["county"] = google_counties["sub_region_2"]
+
+state_county_combinations = []
+for i in list(zip(apple_counties.state, apple_counties.county)):
+    state_county_combinations.append(", ".join(i))
+
+state_county_combinations = set(state_county_combinations)
+
+case_data = pd.read_csv("data/jhu-case-data.csv", parse_dates=["date"])
+
+state_input = pn.widgets.AutocompleteInput(
+    name="Select a state, county",
+    options=list(state_county_combinations),
+    placeholder="ex: Maryland, Calvert County",
+    value="Maryland, Calvert County",
+)
+
+
+@pn.depends(state_input.param.value)
+def state_county_plot(state_input):
+    state, county = state_input.split(", ")
+
+    apple_to_plot_sc = apple_counties[
+        (apple_counties.state == state) & (apple_counties.county == county)
+    ]
+    google_to_plot_sc = google_counties[
+        (google_counties.state == state) & (google_counties.county == county)
+    ]
+
+    apple_to_plot_sc = apple_to_plot_sc.melt(
+        id_vars="date",
+        value_vars=["driving", "transit", "walking"],
+        var_name="type",
+        value_name="volume",
+    )
+
+    google_cols_to_melt_sc = google_to_plot_sc.columns[4:]
+    google_to_plot_sc = google_to_plot_sc.melt(
+        id_vars="date",
+        value_vars=google_cols_to_melt_sc,
+        var_name="type",
+        value_name="volume",
+    )
+
+    brush = alt.selection_interval(encodings=["x"])
+
+    color = alt.condition(
+        brush, alt.Color("type:Q", legend=None), alt.value("lightgray")
+    )
+
+    apple_sc = apple = (
+        alt.Chart(apple_to_plot_sc)
+        .mark_line()
+        .encode(x="date:T", y="volume:Q", color="type:N")
+        .add_selection(brush)
+        .properties(title="Apple mobility data")
+    )
+
+    google_sc = google = (
+        alt.Chart(google_to_plot_sc)
+        .mark_line()
+        .encode(
+            x=alt.X("date:T", scale=alt.Scale(domain=brush)),
+            y="volume:Q",
+            color="type:N",
+        )
+        .properties(title="Google mobility data")
+    )
+
+    subtitle = f"### Mobility and case data for {state}, {county}"
+
+    county_to_plot = pd.DataFrame(
+        case_data[
+            (case_data.Province_State == state)
+            & (case_data.Admin2 == county.split()[0])
+        ]
+    )
+    county_to_plot["new_cases"] = (
+        county_to_plot["cases"].rolling(window=2).apply(lambda x: x[1] - x[0], raw=True)
+    )
+
+    county_cum_cases = (
+        alt.Chart(county_to_plot)
+        .mark_line()
+        .encode(
+            x=alt.X("date:T", scale=alt.Scale(domain=brush), title="Cumulative Cases"),
+            y="cases:Q",
+        )
+        .properties(title={"text": "Daily New Cases", "subtitle": "Source: JHU"})
+    )
+
+    county_new_cases = (
+        alt.Chart(county_to_plot)
+        .mark_line()
+        .encode(
+            x=alt.X("date:T", scale=alt.Scale(domain=brush), title="Daily New Cases"),
+            y="new_cases:Q",
+        )
+        .properties(title={"text": "Daily New Cases", "subtitle": "Source: JHU"})
+    )
+
+    county_plots_set = alt.vconcat(
+        apple_sc | google_sc, county_cum_cases | county_new_cases
+    )
+
+    return pn.Column(subtitle, county_plots_set)
+
+
+state_county_dash = pn.Row(pn.Column(state_input, state_county_plot))
+
+state_county_dash
+
+```
+
+
+## Altair: Bump Stock Chart
+
+```{python}
+import altair as alt
+from vega_datasets import data
+import pandas as pd
+
+stocks = data.stocks()
+source = (
+    stocks.groupby([pd.Grouper(key="date", freq="6M"), "symbol"]).mean().reset_index()
+)
+
+alt.Chart(source).mark_line(point=True).encode(
+    x=alt.X("date:O", timeUnit="yearmonth", title="date"),
+    y="rank:O",
+    color=alt.Color("symbol:N"),
+).transform_window(
+    rank="rank()",
+    sort=[alt.SortField("price", order="descending")],
+    groupby=["date"],
+).properties(
+    title="Bump Chart for Stock Prices",
+    width=600,
+    height=150,
+)
+```
+
+
+## Altair: Dynamic colouring & slider
+```{python}
+import altair as alt
+import pandas as pd
+import numpy as np
+
+rand = np.random.RandomState(42)
+df = pd.DataFrame({"xval": range(100), "yval": rand.randn(100).cumsum()})
+
+slider = alt.binding_range(min=0, max=100, step=1, name="cutoff:")
+selector = alt.selection_single(
+    name="SelectorName", fields=["cutoff"], bind=slider, init={"cutoff": 50}
+)
+
+alt.Chart(df).mark_point().encode(
+    x="xval",
+    y="yval",
+    color=alt.condition(
+        alt.datum.xval < selector.cutoff, alt.value("red"), alt.value("blue")
+    ),
+).add_selection(selector)
+```
+
+## Altaire: Linked Brush & Facets
+```{python}
+import altair as alt
+from vega_datasets import data
+
+source = alt.UrlData(data.flights_2k.url, format={"parse": {"date": "date"}})
+
+brush = alt.selection(type="interval", encodings=["x"])
+
+# Define the base chart, with the common parts of the
+# background and highlights
+base = (
+    alt.Chart()
+    .mark_bar()
+    .encode(
+        x=alt.X(alt.repeat("column"), type="quantitative", bin=alt.Bin(maxbins=20)),
+        y="count()",
+    )
+    .properties(width=160, height=130)
+)
+
+# gray background with selection
+background = base.encode(color=alt.value("#ddd")).add_selection(brush)
+
+# blue highlights on the transformed data
+highlight = base.transform_filter(brush)
+
+# layer the two charts & repeat
+alt.layer(background, highlight, data=source).transform_calculate(
+    "time", "hours(datum.date)"
+).repeat(column=["distance", "delay", "time"])
+```
+
+## Altair: Selection by Legend
+```{python}
+
+import altair as alt
+from vega_datasets import data
+
+source = data.unemployment_across_industries.url
+
+selection = alt.selection_multi(fields=["series"], bind="legend")
+
+alt.Chart(source).mark_area().encode(
+    alt.X("yearmonth(date):T", axis=alt.Axis(domain=False, format="%Y", tickSize=0)),
+    alt.Y("sum(count):Q", stack="center", axis=None),
+    alt.Color("series:N", scale=alt.Scale(scheme="category20b")),
+    opacity=alt.condition(selection, alt.value(1), alt.value(0.2)),
+).add_selection(selection)
+```

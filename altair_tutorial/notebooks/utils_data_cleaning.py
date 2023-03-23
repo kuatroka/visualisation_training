@@ -1,3 +1,4 @@
+%%time 
 from datetime import datetime
 from bs4 import BeautifulSoup as bs
 import re
@@ -20,10 +21,10 @@ import pandera as pa
 ## uses `pandera` to remove `values` or `shares` != 0 (as non compliant)
 ## the code writes bad data into a separate dataframes per filings
 ## transformation where we group multiple `cusip` into one only after we have removed 
-## the ones with zeros in `value` or `shares` 
+# the ones with zeros in `value` or `shares` 
 
 
-def end_to_end_parsing(file_path, directory_parquet, failures_parq_dir):
+def end_to_end_parsing(file_path, directory_parquet, failures_parq_dir, data_load_run, cutoff_date = '2023-02-17'):
     """
     func that takes a txt filing's path and parses it to a parquet file
     in the `directory_parquet`. It uses `pandera` lazy mode to filter out
@@ -128,6 +129,7 @@ def end_to_end_parsing(file_path, directory_parquet, failures_parq_dir):
         ).date()
         dataDictionary["xml_flag"] = xml_flag
         dataDictionary["created_at"] = datetime.now()
+        dataDictionary["updated_at"] = datetime.now()
 
         # dataDictionary = dict()
         dataDictionary["edgar_path"] = file_path
@@ -290,9 +292,11 @@ def end_to_end_parsing(file_path, directory_parquet, failures_parq_dir):
         "shares_bonds",
         "put_call",
         "type",
-        "created_at",
         "file",
-        'dsource'
+        'dsource',
+        "created_at",
+        'updated_at',
+        'data_load_run'
     ]
     data = data.astype(
         {
@@ -312,32 +316,37 @@ def end_to_end_parsing(file_path, directory_parquet, failures_parq_dir):
             "shares_bonds": str,
             "put_call": str,
             "type": str,
-            "created_at": "datetime64[ns]",
             "file": str,
-            'dsource': str
+            'dsource': str,
+            "created_at": "datetime64[ns]",
+            "updated_at": "datetime64[ns]"
         }
     )
     attributes = {
-        "accession_number": "first",
         "cik": "first",
         "cik_name": "first",
-        "rdate": "first",
-        "submission_type": "first",
+        "rdate": "first",       
         "fdate": "first",
-        "entry_total": "first",
-        "value_total": "first",
         "cusip": "first",
-        "name_of_issuer": "first",
-        "title_of_class": "first",
+        "name_of_issuer": "first",        
         "value": "sum",
         "shares": "sum",
+        "title_of_class": "first",
         "shares_bonds": "first",
         "put_call": "first",
+        "accession_number": "first",
+        "submission_type": "first",
         "type": "first",
         "file": "first",
-        'dsource': 'first'
+        'dsource': 'first',
+        "entry_total": "first",
+        "value_total": "first",
+        "created_at": "first",
+        "updated_at": "first",
+        'data_load_run': 'first'
     }
-    data = data.assign(cusip=data.cusip.str.upper())
+    data = data.assign(cusip=data.cusip.str.upper(),
+                       data_load_run=data_load_run)
     data = data.reindex(columns=column_names)
    
     ## pandera code
@@ -348,7 +357,7 @@ def end_to_end_parsing(file_path, directory_parquet, failures_parq_dir):
     "value":  pa.Column(float, pa.Check(lambda s: s != 0.0), required=True, nullable=False),
     "shares": pa.Column(float, pa.Check(lambda s: s != 0.0), required=True, nullable=False)
         })
-    if data.head(1).type.squeeze() != 'NO':
+    if data.head(1).type.squeeze() != 'NO' and data.head(1).fdate.squeeze() > pd.to_datetime(cutoff_date,format='%Y-%m-%d'):
         try:
             validation_schema.validate(data, lazy=True)
             if not data.empty:
@@ -368,26 +377,23 @@ def end_to_end_parsing(file_path, directory_parquet, failures_parq_dir):
             failure_cases = e.failure_cases
             failure_cases = (failure_cases.assign(df_file=data.file,
                                                  df_cik=data.cik,
+                                                 df_accession_number=data.accession_number,
                                                  df_rdate=data.rdate,
                                                  df_fdate=data.fdate,
                                                  df_value=data.value)).astype({'failure_case':str})
             # print(failure_cases)
             failure_cases.to_parquet(Path.joinpath(failures_parq_dir, \
-                                                   f"bad-{data.head(1).cik[0]}-{data.head(1).accession_number[0]}-   {data.head(1).fdate[0].strftime('%Y-%m-%d')}.parquet"))
+                                                   f"bad-{data.head(1).cik[0]}-{data.head(1).accession_number[0]}-{data.head(1).fdate[0].strftime('%Y-%m-%d')}.parquet"))
             data = data[~data.index.isin(failure_cases["index"])]
+            
             if not data.empty:
                 # group cusips
                 df2 = data.groupby(["cusip"], as_index=False).agg(attributes)
                 df2.to_parquet(
                     os.path.join(
                         directory_parquet,
-                        f"{df2.head(1).cik[0]}-{df2.head(1).accession_number[0]}-{df2.head(1).fdate[0].strftime('%Y-%m-%d')}.parquet",
-                                    )
-                                )
+                        f"{df2.head(1).cik[0]}-{df2.head(1).accession_number[0]}-{df2.head(1).fdate[0].strftime('%Y-%m-%d')}.parquet"))
+                
 
-                # return df2
             else: pd.DataFrame()
-            
-            
-if __name__ == "__main__":
-    end_to_end_parsing(file, directory_parq, failure_dir)
+        if 'cik' and 'accession_number' in df2.columns: return {'data_load_run':data_load_run,'cik':df2.head(1).cik[0], 'accession_number': df2.head(1).accession_number[0], 'qa':'no'}
